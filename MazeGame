@@ -1,0 +1,409 @@
+org 100h
+.data
+    WALL_CHAR    equ '#'
+    PLAYER_CHAR  equ 'P'
+    EXIT_CHAR    equ 'E'
+    SPACE_CHAR   equ ' '
+ 
+    KEY_UP       equ 48h
+    KEY_DOWN     equ 50h
+    KEY_LEFT     equ 4Bh
+    KEY_RIGHT    equ 4Dh
+
+    cur_x dw 1
+    cur_y dw 1
+    level_num db 1
+    level_ptr dw offset lvl1
+
+    timer_started db 0      
+    seconds       db 60     
+    prev_second   db 0     
+
+    msg_timer     db "KALAN SURE: $"
+
+    msg_gameover  db 0dh, 0ah, "SURE BITTI! OYUNU KAYBETTINIZ.$"
+
+    msg_welcome db "LABIRENTTEN KACIS OYUNUNA HOS GELDINIZ!", 0dh, 0ah
+                db "Yon tuslariyla hareket edin.", 0dh, 0ah
+                db "Baslamak icin herhangi bir tusa basin...$"
+                
+    msg_lvl2    db 0dh, 0ah, "TEBRIKLER! 1. SEVIYE BITTI", 0dh, 0ah
+                db "Simdi 2. Seviye basliyor. Hazir misin?$"
+
+    msg_lvl3    db 0dh, 0ah, "HARIKA! 2. SEVIYEYI DE GECTIN.", 0dh, 0ah
+                db "Final Seviyesi: BUYUK USTA LABIRENTI!$"
+
+    msg_win     db 0dh, 0ah, "********** OYUNU KAZANDINIZ! **********", 0dh, 0ah
+                db "********** TEBRIKLER BUYUK USTA! **********", 0dh, 0ah
+                db "Cikmak icin bir tusa basin...$"
+
+    lvl1 db "####################"
+         db "#P#       #        #"
+         db "# # ##### # ###### #"
+         db "#   #   #      #   #"
+         db "##### # # ###### # #"
+         db "#     # # #      # #"
+         db "# ##### # # ###### #"
+         db "# #     # #        #"
+         db "# # ##### ##########"
+         db "# #                #"
+         db "# # ############## #"
+         db "# # #            # #"
+         db "# # # ########## # #"
+         db "# # # #        # # #"
+         db "# # # # ###### # # #"
+         db "#   # # #    # # # #"
+         db "##### # # ## # # # #"
+         db "#       #    #     #"
+         db "##################E#"
+         db "####################", 0
+         
+    lvl2 db "####################"
+         db "#P#   #     #      #"
+         db "# # # # ### # #### #"
+         db "# # #   #   #    # #"
+         db "# # ##### ###### # #"
+         db "#   #   #      # # #"
+         db "### # # ###### # # #"
+         db "#   # #      # #   #"
+         db "# ### ###### # #####"
+         db "#   #      # #     #"
+         db "# # ###### # ##### #"
+         db "# #      # #   #   #"
+         db "# ###### # ### # ###"
+         db "#      # #     #   #"
+         db "###### # ##### ### #"
+         db "#    # #     # #   #"
+         db "# ## # ##### # # ###"
+         db "#    #       #     #"
+         db "######### ########E#"
+         db "####################", 0
+
+    lvl3 db "####################"
+         db "#P#   #       #    #"
+         db "# # # ### ### # ## #"
+         db "# # #   #   # #    #"
+         db "# # ### ### # #### #"
+         db "#   #   #   #    # #"
+         db "### # ### ###### # #"
+         db "#   #   #      # # #"
+         db "# ### ####### ## # #"
+         db "# #   #     #    # #"
+         db "# # ### ### ###### #"
+         db "# #   #   #      # #"
+         db "# ### ### ###### # #"
+         db "#   #   #   #    # #"
+         db "### ### ### # #### #"
+         db "#     #     #    # #"
+         db "# ##### ######## # #"
+         db "#     #        #   #"
+         db "# ########## #### E#"
+         db "####################", 0
+
+.code
+main:
+    mov ax, @data
+    mov ds, ax
+
+    call clear_screen
+    lea dx, msg_welcome
+    mov ah, 09h
+    int 21h
+    mov ah, 00h 
+    int 16h
+
+init_game:
+    cmp level_num, 1
+    je set_60
+    cmp level_num, 2
+    je set_90
+    mov seconds, 90          
+    jmp continue_init
+set_60:
+    mov seconds, 60
+    jmp continue_init
+set_90:
+    mov seconds, 90
+continue_init:
+    mov timer_started, 0
+    mov prev_second, 0
+
+    call clear_screen
+    call draw_map
+    
+game_loop:
+    mov dh, byte ptr [cur_y]
+    mov dl, byte ptr [cur_x]
+    mov al, PLAYER_CHAR
+    call put_char
+    cmp timer_started, 1
+    jne check_input
+    call update_timer
+
+check_input:
+    mov ah, 01h
+    int 16h
+    jz game_loop
+    mov ah, 00h
+    int 16h 
+    cmp timer_started, 0
+    jne already_started
+    mov timer_started, 1
+    mov ah, 2Ch
+    int 21h
+    mov prev_second, dh   
+    call print_timer       
+already_started:
+
+    cmp al, 27
+    je exit
+
+    mov cx, [cur_x]
+    mov dx, [cur_y]
+
+    cmp ah, KEY_UP
+    je move_up
+    cmp ah, KEY_DOWN
+    je move_down
+    cmp ah, KEY_LEFT
+    je move_left
+    cmp ah, KEY_RIGHT
+    je move_right
+    jmp game_loop
+
+move_up: dec dx
+    jmp validate
+move_down: inc dx
+    jmp validate
+move_left: dec cx
+    jmp validate
+move_right: inc cx
+    jmp validate
+
+validate:
+    push bx
+    push si
+    mov ax, dx
+    mov bl, 20
+    mul bl
+    add ax, cx
+    mov si, ax
+    add si, level_ptr
+    mov al, [si]
+    pop si
+    pop bx
+
+    cmp al, WALL_CHAR
+    je game_loop    
+    cmp al, EXIT_CHAR
+    je level_up
+
+    push cx
+    push dx
+    mov dh, byte ptr [cur_y]
+    mov dl, byte ptr [cur_x]
+    mov al, SPACE_CHAR
+    call put_char
+    pop dx
+    pop cx
+
+    mov [cur_x], cx
+    mov [cur_y], dx
+    jmp game_loop
+
+update_timer:
+    push ax
+    push bx
+    push cx
+    push dx
+    mov ah, 2Ch
+    int 21h         
+    mov al, dh     
+    cmp al, prev_second
+    je timer_done    
+    mov prev_second, al
+    dec seconds
+
+    call print_timer
+
+    cmp seconds, 0
+    jle game_over
+
+timer_done:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+print_timer:
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov ah, 02h
+    mov bh, 0
+    mov dh, 0
+    mov dl, 25
+    int 10h
+
+    lea dx, msg_timer
+    mov ah, 09h
+    int 21h
+
+    mov al, seconds
+    xor ah, ah
+    mov bl, 10
+    div bl          
+
+    mov cx, ax
+    mov dl, cl
+    add dl, '0'
+    mov ah, 02h
+    int 21h
+    mov dl, ch
+    add dl, '0'
+    mov ah, 02h
+    int 21h
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+game_over:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    call clear_screen
+    lea dx, msg_gameover
+    mov ah, 09h
+    int 21h
+    mov ah, 00h
+    int 16h
+    jmp exit
+    
+level_up:
+    inc level_num
+    call clear_screen
+
+    cmp level_num, 2
+    je show_lvl2_msg
+    cmp level_num, 3
+    je show_lvl3_msg
+    jmp win_final
+
+show_lvl2_msg:
+    lea dx, msg_lvl2
+    mov ah, 09h
+    int 21h
+    mov ah, 0Ch
+    mov al, 0
+    int 21h
+    mov ah, 00h
+    int 16h
+
+    mov level_ptr, offset lvl2
+    mov cur_x, 1
+    mov cur_y, 1
+    jmp init_game
+
+show_lvl3_msg:
+    lea dx, msg_lvl3
+    mov ah, 09h
+    int 21h
+    mov ah, 0Ch
+    mov al, 0
+    int 21h
+    mov ah, 00h
+    int 16h
+
+    mov level_ptr, offset lvl3
+    mov cur_x, 1
+    mov cur_y, 1
+    jmp init_game
+
+win_final:
+    lea dx, msg_win
+    mov ah, 09h
+    int 21h
+    mov ah, 0Ch
+    mov al, 0
+    int 21h
+    mov ah, 00h
+    int 16h
+    jmp exit
+
+draw_map:
+    mov si, level_ptr
+    mov dh, 0
+dr_row:
+    mov dl, 0
+dr_col:
+    mov al, [si]
+    cmp al, 0
+    je dr_done
+    call put_char
+    inc si
+    inc dl
+    cmp dl, 20
+    jne dr_col
+    inc dh
+    cmp dh, 20
+    jne dr_row
+dr_done:
+    ret
+
+put_char:
+    push ax
+    push bx
+    push cx
+    push dx
+
+    push ax
+    mov ah, 02h
+    mov bh, 0
+    int 10h
+    pop ax
+
+    cmp al, WALL_CHAR
+    jne check_player
+    mov al, 219          
+    jmp do_print
+check_player:
+    cmp al, PLAYER_CHAR
+    jne check_exit
+    mov al, 4          
+    jmp do_print
+check_exit:
+    cmp al, EXIT_CHAR
+    jne do_print
+    mov al, 178         
+
+do_print:
+    mov ah, 09h
+    mov bh, 0
+    mov bl, 07h        
+    mov cx, 1
+    int 10h
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+clear_screen:
+    mov ax, 0003h
+    int 10h
+    ret
+
+exit:
+    mov ah, 4Ch
+    int 21h
+
+end main
